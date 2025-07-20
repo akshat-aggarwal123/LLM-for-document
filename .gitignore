@@ -1,0 +1,37 @@
+# --- Virtual Environment ---
+# Never commit your virtual environment directory
+venv/
+
+# --- Python Caches and Artifacts ---
+# Ignore Python's bytecode and cache directories
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore packaging and distribution artifacts
+build/
+dist/
+*.egg-info/
+
+# --- Environment Variables ---
+# Never commit your environment files, as they contain secrets
+.env
+.env.*
+
+# --- Project-specific Files ---
+# Ignore logs, data, downloaded models, and vector stores
+logs/
+data/
+
+# --- IDE / Editor Files ---
+# Ignore configuration files from common editors
+.vscode/
+.idea/
+.DS_Store
+
+# --- Testing ---
+# Ignore testing artifacts and caches
+.pytest_cache/
+.coverage
+htmlcov/

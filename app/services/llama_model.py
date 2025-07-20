@@ -40,6 +40,7 @@ class LlamaModelService:
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_use_double_quant=True,
+                llm_int8_enable_fp32_cpu_offload=True
             )
 
             # Load tokenizer
@@ -51,14 +52,14 @@ class LlamaModelService:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
             # Load model
-            self.model = AutoModelForCausalLM.from_pretrained(
+            self.model = self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
-                quantization_config=quantization_config,
                 device_map="auto",
                 trust_remote_code=True,
                 cache_dir=self.settings.MODEL_CACHE_DIR,
-                torch_dtype=torch.float16
+                torch_dtype=torch.float16  # or use torch.float32 if needed
             )
+
 
             # Create pipeline
             self.pipeline = pipeline(

@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # Document Processing
     max_chunk_size: int = 1000
     chunk_overlap: int = 150
-    max_file_size: int = 50  # MB
+    max_file_size: int = 50 
 
     # Decision Engine Parameters
     confidence_threshold: float = 0.7
@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_file: str = "./logs/app.log"
+
+
+    ALLOWED_ORIGINS: List[str] = ["*"]
+    DATA_DIR: str = os.path.join(os.getcwd(), "data")
 
     class Config:
         env_file = ".env"
@@ -114,4 +118,7 @@ CLAUSE_TYPES = {
     'eligibility': ['eligibility', 'qualify', 'eligible', 'requirement', 'condition'],
     'general': ['policy', 'term', 'definition', 'procedure']
 }
+
+print(f"max_file_size from env: {os.getenv('MAX_FILE_SIZE')}")
+
 settings = get_settings()

@@ -187,6 +187,15 @@ async def upload_document(file: UploadFile = File(...)):
         
         # Process document - this now calls your fixed DocumentProcessor
         processed_data = document_processor.process_document(file_path)
+
+        # ...after processing...
+        clauses = document_processor.process_document(file_path)
+        processed_data = {
+            'document_type': 'unknown',  # or infer from clauses
+            'sections': clauses,
+            'entities': [],  # or extract entities if available
+            'content': "\n\n".join([clause.text for clause in clauses])
+        }
         print(f"[DEBUG] Document processed successfully")
         print(f"[DEBUG] Processed data keys: {list(processed_data.keys()) if isinstance(processed_data, dict) else 'Not a dict'}")
 
@@ -222,7 +231,11 @@ async def upload_document(file: UploadFile = File(...)):
             message="Document uploaded and processed successfully",
             document_type=processed_data['document_type'],
             sections_extracted=len(processed_data['sections']),
-            entities_found=len(processed_data['entities'])
+            entities_found=len(processed_data['entities']),
+            success=True,
+            pages_processed=len(processed_data['sections']),
+            chunks_created=len(processed_data['sections']),
+            processing_time=0.0  # You can set this to the actual processing time if available
         )
 
     except DocumentProcessingError as e:
@@ -283,13 +296,16 @@ async def process_query(request: QueryRequest):
         logger.info(f"Retrieved {len(retrieval_results['documents'])} relevant documents")
         print(f"[DEBUG] Retrieved {len(retrieval_results['documents'])} documents")
 
+        print(f"[DEBUG] claim_info: {parsed_query}")
+        print(f"[DEBUG] retrieved_documents: {retrieval_results['documents']}")
+
         # Make decision using decision engine
         decision_result = decision_engine.make_decision(
-            query_data=parsed_query,
-            relevant_documents=retrieval_results['documents'],
-            user_context=request.context or {}
+            claim_info=parsed_query,
+            retrieved_documents=retrieval_results['documents']
         )
-        print(f"[DEBUG] Decision made: {decision_result.get('decision', 'unknown')}")
+        
+        print(f"[DEBUG] Decision made: {decision_result.decision}")
 
         # Generate advanced reasoning with Llama model if needed
         if request.use_llm and llama_model is not None and hasattr(llama_model, 'model') and llama_model.model is not None:
@@ -328,17 +344,17 @@ async def process_query(request: QueryRequest):
         # Prepare response
         response = QueryResponse(
             query=request.query,
-            decision=decision_result['decision'],
-            confidence_score=decision_result['confidence_score'],
-            justification=decision_result['justification'],
-            amount=decision_result.get('amount'),
-            relevant_clauses=decision_result['relevant_clauses'],
+            decision=decision_result.decision,
+            confidence_score=decision_result.confidence_score,
+            justification=decision_result.justification,
+            amount=getattr(decision_result, "approved_amount", None),
+            relevant_clauses=decision_result.relevant_clauses,
             parsed_entities=parsed_query,
             processing_time=retrieval_results.get('processing_time', 0.0),
             documents_searched=len(retrieval_results['documents']),
-            detailed_reasoning=decision_result.get('detailed_reasoning'),
-            confidence_factors=decision_result.get('confidence_factors', []),
-            risk_assessment=decision_result.get('risk_assessment')
+            detailed_reasoning=getattr(decision_result, "detailed_reasoning", None),
+            confidence_factors=getattr(decision_result, "confidence_factors", []),
+            risk_assessment=getattr(decision_result, "risk_assessment", None)
         )
 
         logger.info(f"Query processed successfully. Decision: {response.decision}")
@@ -363,7 +379,7 @@ async def process_query(request: QueryRequest):
 
     except DecisionEngineError as e:
         print(f"[DEBUG] Decision engine error: {str(e)}")
-        logger.error(f"Decision engine error: {str(e)}")
+        logger.error(f"Error in decision making: {e}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Decision processing failed: {str(e)}"

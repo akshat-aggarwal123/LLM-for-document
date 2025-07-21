@@ -1,3 +1,5 @@
+from time import time
+import time
 import chromadb
 from chromadb.utils import embedding_functions
 from sentence_transformers import SentenceTransformer
@@ -5,6 +7,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import hashlib
 from collections import Counter
+from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.utils.logging import get_logger
@@ -13,7 +16,15 @@ logger = get_logger(__name__)
 
 class SemanticRetriever:
     """Semantic search and retrieval using ChromaDB and sentence transformers."""
-
+    def store_document(self, content, metadata):
+        """
+        Store document content and metadata in the vector database.
+        Returns a unique document ID.
+        """
+        # TODO: Implement actual storage logic
+        # For now, just return a dummy ID
+        return f"doc_{int(time.time())}"
+    
     def __init__(self, settings):
         self.settings = settings
         self.chroma_client = None
@@ -214,3 +225,21 @@ class SemanticRetriever:
         except Exception as e:
             logger.error(f"Error in hybrid search: {e}")
             return []
+
+    def retrieve_relevant_content(self, query, parsed_data=None, top_k=5):
+        """
+        Retrieve relevant documents/chunks for a query.
+        Returns a dict with 'documents' and optionally 'processing_time'.
+        """
+        start_time = time.time()
+        # Use your semantic search logic here
+        results = self.search(query, top_k=top_k)
+        processing_time = time.time() - start_time
+        return {
+            "documents": results,
+            "processing_time": processing_time
+        }
+
+class QueryRequest(BaseModel):
+    query: str
+    top_k: int = 5

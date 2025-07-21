@@ -20,8 +20,8 @@ from app.utils.logging import app_logger as logger
 class DocumentProcessor:
     """Handles document loading, text extraction, and chunking"""
 
-    def _init_(self, settings):
-        print(f"[DEBUG] DocumentProcessor._init_ - settings type: {type(settings)}")
+    def __init__(self, settings):
+        print(f"[DEBUG] DocumentProcessor.__init__ - settings type: {type(settings)}")
         self.settings = settings
         self.supported_extensions = ['.pdf', '.docx', '.txt', '.html', '.eml']
         print(f"[DEBUG] DocumentProcessor initialized with settings: {self.settings is not None}")

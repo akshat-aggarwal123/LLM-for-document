@@ -10,6 +10,9 @@ class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500, description="Natural language query")
     include_clauses: bool = Field(default=True, description="Include relevant clauses in response")
     max_results: int = Field(default=5, ge=1, le=20, description="Maximum number of results to return")
+    top_k: int = Field(default=5, ge=1, le=20, description="Top K results to return")
+    context: dict = Field(default_factory=dict, description="Contextual information for the query")
+    use_llm: bool = Field(default=False, description="Flag to use large language model for query processing")
 
     @validator('query')
     def validate_query(cls, v):

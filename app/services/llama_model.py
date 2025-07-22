@@ -9,8 +9,7 @@ from typing import Dict, List, Optional, Any
 import torch
 from transformers import (
     AutoTokenizer,
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
+    AutoModelForSeq2SeqLM,  # Changed from AutoModelForCausalLM
     pipeline
 )
 from ..core.config import Settings
@@ -30,46 +29,35 @@ class LlamaModelService:
         self._initialize_model()
 
     def _initialize_model(self):
-        """Initialize the Llama model with optimized settings"""
+        """Initialize the model with optimized settings"""
         try:
-            model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+            # Using FLAN-T5 small as a publicly available alternative
+            model_name = "google/flan-t5-small"
 
-            # Configure quantization for memory efficiency
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                llm_int8_enable_fp32_cpu_offload=True
-            )
+            # Configure basic settings (no quantization needed for small model)
+            logging.info(f"Initializing model: {model_name}")
 
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
                 model_name,
-                trust_remote_code=True,
                 cache_dir=self.settings.MODEL_CACHE_DIR
             )
-            self.tokenizer.pad_token = self.tokenizer.eos_token
 
             # Load model
-            self.model = self.model = AutoModelForCausalLM.from_pretrained(
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(
                 model_name,
                 device_map="auto",
-                trust_remote_code=True,
                 cache_dir=self.settings.MODEL_CACHE_DIR,
-                torch_dtype=torch.float16  # or use torch.float32 if needed
+                torch_dtype=torch.float32
             )
-
 
             # Create pipeline
             self.pipeline = pipeline(
-                "text-generation",
+                "text2text-generation",  # FLAN-T5 uses text2text-generation
                 model=self.model,
                 tokenizer=self.tokenizer,
-                max_new_tokens=512,
-                do_sample=True,
-                temperature=0.1,
-                pad_token_id=self.tokenizer.eos_token_id
+                max_length=512,
+                temperature=0.7
             )
 
             logger.info(f"Llama model initialized successfully on {self.device}")

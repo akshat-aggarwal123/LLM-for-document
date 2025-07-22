@@ -3,7 +3,11 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic_settings import BaseSettings
 import os
-from functools import lru_cache # <--- ADD THIS IMPORT
+from functools import lru_cache
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables"""

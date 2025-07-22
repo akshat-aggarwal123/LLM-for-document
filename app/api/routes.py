@@ -131,6 +131,23 @@ async def health_check():
             services={}
         )
 
+
+
+        return HealthResponse(
+            status="healthy" if all_healthy else "degraded",
+            message="All systems operational" if all_healthy else "Some services unavailable",
+            services=services_status
+        )
+
+    except Exception as e:
+        print(f"[DEBUG] Health check error: {str(e)}")
+        logger.error(f"Health check failed: {str(e)}")
+        return HealthResponse(
+            status="unhealthy",
+            message=f"System error: {str(e)}",
+            services={}
+        )
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
     """Upload and process documents"""
@@ -408,17 +425,8 @@ async def list_documents():
         documents = semantic_retriever.list_stored_documents()
         print(f"[DEBUG] Found {len(documents)} documents")
 
-        document_info = []
-        for doc in documents:
-            metadata = doc.get('metadata', {})
-            document_info.append(DocumentInfo(
-                document_id=doc.get('id', ''),
-                filename=metadata.get('filename', 'Unknown'),
-                document_type=metadata.get('document_type', 'unknown'),
-                upload_date=metadata.get('upload_date', ''),
-                sections_count=len(metadata.get('sections', [])),
-                file_size=metadata.get('file_size', 0)
-            ))
+        # Documents are already in the correct format from semantic_retriever
+        document_info = [DocumentInfo(**doc) for doc in documents]
 
         return document_info
 

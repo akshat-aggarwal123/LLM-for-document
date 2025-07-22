@@ -1,5 +1,6 @@
 from time import time
 import time
+from datetime import datetime
 import chromadb
 from chromadb.utils import embedding_functions
 from sentence_transformers import SentenceTransformer
@@ -21,9 +22,54 @@ class SemanticRetriever:
         Store document content and metadata in the vector database.
         Returns a unique document ID.
         """
-        # TODO: Implement actual storage logic
-        # For now, just return a dummy ID
-        return f"doc_{int(time.time())}"
+        try:
+            # Create a unique document ID
+            doc_id = f"doc_{int(time.time())}"
+            
+            # Process metadata to ensure only simple types are included
+            processed_metadata = {}
+            
+            # Add timestamp to metadata in ISO format
+            processed_metadata['upload_date'] = datetime.now().isoformat()
+            
+            # Process other metadata fields
+            if isinstance(metadata, dict):
+                # Extract filename if available
+                if 'file_path' in metadata:
+                    processed_metadata['filename'] = Path(metadata['file_path']).name
+                    processed_metadata['file_path'] = metadata['file_path']
+                
+                # Handle other metadata fields
+                for key, value in metadata.items():
+                    if key not in processed_metadata:  # Don't overwrite already processed fields
+                        # Only include simple types
+                        if isinstance(value, (str, int, float, bool)) or value is None:
+                            processed_metadata[key] = value
+                        else:
+                            # Convert complex types to string representation if needed
+                            processed_metadata[key] = str(value)
+                
+                # Ensure we have document type
+                if 'document_type' not in processed_metadata:
+                    if 'file_path' in processed_metadata:
+                        ext = Path(processed_metadata['file_path']).suffix.lower()
+                        processed_metadata['document_type'] = ext[1:] if ext else 'unknown'
+                    else:
+                        processed_metadata['document_type'] = 'unknown'
+            
+            # Store the document
+            self.collection.add(
+                documents=[content],
+                metadatas=[processed_metadata],
+                ids=[doc_id]
+            )
+            
+            logger.info(f"Successfully stored document with ID: {doc_id}")
+            return doc_id
+            
+        except Exception as e:
+            logger.error(f"Error storing document: {e}")
+            raise
     
     def __init__(self, settings):
         self.settings = settings
@@ -224,6 +270,54 @@ class SemanticRetriever:
 
         except Exception as e:
             logger.error(f"Error in hybrid search: {e}")
+            return []
+
+    def list_stored_documents(self) -> List[Dict[str, Any]]:
+        """List all stored documents with their metadata"""
+        try:
+            # Get all documents with their metadata
+            result = self.collection.get(
+                include=["documents", "metadatas"]
+            )
+            
+            documents = []
+            
+            # Process documents and metadata
+            for idx, (content, metadata) in enumerate(zip(
+                result['documents'], 
+                result['metadatas']
+            )):
+                # Ensure upload_date is a valid ISO format
+                upload_date = metadata.get('upload_date')
+                if not upload_date or not isinstance(upload_date, str):
+                    # Default to current time in ISO format
+                    upload_date = datetime.now().isoformat()
+                
+                # Get filename from metadata or generate one
+                filename = metadata.get('filename')
+                if not filename:
+                    # Try to get filename from original file path if it exists
+                    file_path = metadata.get('file_path')
+                    if file_path:
+                        filename = Path(file_path).name
+                    else:
+                        filename = f"document_{idx}.txt"
+                
+                doc_info = {
+                    'document_id': metadata.get('file_path', f'doc_{idx}'),  # Use file_path as ID or generate one
+                    'filename': filename,
+                    'document_type': metadata.get('document_type', 'pdf'),  # Default to PDF since we're handling PDF files
+                    'upload_date': upload_date,
+                    'sections_count': len(metadata.get('sections', [])),
+                    'file_size': metadata.get('file_size', len(content) if content else 0)  # Use content length if file_size not provided
+                }
+                documents.append(doc_info)
+            
+            logger.info(f"Retrieved {len(documents)} documents from collection")
+            return documents
+
+        except Exception as e:
+            logger.error(f"Error listing documents: {e}")
             return []
 
     def retrieve_relevant_content(self, query, parsed_data=None, top_k=5):

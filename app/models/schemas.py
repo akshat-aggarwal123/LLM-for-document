@@ -102,9 +102,20 @@ class HealthResponse(BaseModel):
 
 class DocumentInfo(BaseModel):
     """Response schema for a single document's metadata"""
-    document_id: str
+    id: str = Field(alias='document_id')
     filename: str
     document_type: str
     upload_date: datetime
     sections_count: int
     file_size: int
+
+    @validator('upload_date', pre=True)
+    def parse_upload_date(cls, v):
+        if not v:  # Handle empty values
+            return datetime.now()
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v)
+            except ValueError:
+                return datetime.now()  # Fallback to current time if parsing fails
+        return v

@@ -5,6 +5,11 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
+class DecisionType(str):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REQUIRES_REVIEW = "requires_review"
+
 class QueryRequest(BaseModel):
     """Request schema for document queries"""
     query: str = Field(..., min_length=1, max_length=500, description="Natural language query")
@@ -32,6 +37,20 @@ class DocumentUploadResponse(BaseModel):
     processing_time: float
 
 
+class DocumentClauseResponse(BaseModel):
+    """Response schema for document clauses"""
+    id: str
+    text: str
+    clause_type: str = Field(default="coverage")
+    source_document: str
+    page_number: Optional[int] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    metadata: Optional[Dict[str, Any]] = None
+
+    @validator('confidence')
+    def validate_confidence(cls, v):
+        return round(float(v), 4)
+
 class QueryEntityResponse(BaseModel):
     """Response schema for extracted query entities"""
     age: Optional[int] = None
@@ -44,10 +63,42 @@ class QueryEntityResponse(BaseModel):
     date: Optional[str] = None
     raw_query: str
 
+class DecisionResponse(BaseModel):
+    """Response schema for query decisions"""
+    query: str
+    decision: str = Field(..., description="Decision: approved, rejected, or requires_review")
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
+    justification: str
+    amount: Optional[float] = None
+    relevant_clauses: List[DocumentClauseResponse] = []
+    parsed_entities: Optional[QueryEntityResponse] = None
+    processing_time: float
+    documents_searched: int = 0
+    detailed_reasoning: Optional[str] = None
+    confidence_factors: List[str] = []
+    risk_assessment: Optional[str] = None
+
+    @validator('decision')
+    def validate_decision(cls, v):
+        valid_decisions = [DecisionType.APPROVED, DecisionType.REJECTED, DecisionType.REQUIRES_REVIEW]
+        if v not in valid_decisions:
+            raise ValueError(f'Decision must be one of: {valid_decisions}')
+        return v
+
 
 class DocumentClauseResponse(BaseModel):
     """Response schema for document clauses"""
     id: str
+    text: str
+    clause_type: str = Field(default="coverage")
+    source_document: str
+    page_number: Optional[int] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    metadata: Optional[Dict[str, Any]] = None
+
+    @validator('confidence')
+    def validate_confidence(cls, v):
+        return round(float(v), 4)
     text: str
     clause_type: str
     source_document: str

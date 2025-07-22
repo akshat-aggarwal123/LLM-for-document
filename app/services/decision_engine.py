@@ -11,7 +11,6 @@ logger = get_logger(__name__)
 class DecisionType(Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
-    PENDING = "pending"
     REQUIRES_REVIEW = "requires_review"
 
 class ConfidenceLevel(Enum):
@@ -195,6 +194,7 @@ class DecisionEngine:
             logger.error(f"Error in decision making: {e}")
             processing_time = (datetime.now() - start_time).total_seconds()
 
+            # Default error case decision
             return DecisionResult(
                 decision=DecisionType.REQUIRES_REVIEW,
                 confidence_score=0.0,
@@ -399,7 +399,7 @@ class DecisionEngine:
         if overall_score >= 0.8:
             return DecisionType.APPROVED
         elif overall_score >= 0.6:
-            return DecisionType.PENDING
+            return DecisionType.REQUIRES_REVIEW
         elif overall_score >= 0.4:
             return DecisionType.REQUIRES_REVIEW
         else:
@@ -430,7 +430,7 @@ class DecisionEngine:
             justification_parts.append("Claim APPROVED based on policy analysis.")
         elif decision == DecisionType.REJECTED:
             justification_parts.append("Claim REJECTED due to policy violations.")
-        elif decision == DecisionType.PENDING:
+        elif decision == DecisionType.REQUIRES_REVIEW:
             justification_parts.append("Claim marked as PENDING - additional information required.")
         else:
             justification_parts.append("Claim requires MANUAL REVIEW due to complexity.")
@@ -461,7 +461,7 @@ class DecisionEngine:
         """Generate actionable recommendations"""
         recommendations = []
 
-        if decision == DecisionType.PENDING:
+        if decision == DecisionType.REQUIRES_REVIEW:
             recommendations.append("Obtain additional medical documentation")
             recommendations.append("Verify policy coverage details")
 

@@ -20,7 +20,7 @@ from ..models.schemas import (
 from ..services.document_processor import DocumentProcessor
 from ..services.query_parser import QueryParser
 from ..services.semantic_retriever import SemanticRetriever
-from ..services.decision_engine import DecisionEngine
+from ..services.decision_engine import DecisionEngine, DecisionType
 from ..services.llama_model import LlamaModelService
 from ..core.config import get_settings
 from ..core.exceptions import (
@@ -358,14 +358,45 @@ async def process_query(request: QueryRequest):
         else:
             print("[DEBUG] LLM not available or not requested")
 
+        # Convert relevant_clauses to proper DocumentClauseResponse objects
+        formatted_clauses = []
+        for idx, clause in enumerate(decision_result.relevant_clauses):
+            if isinstance(clause, str):
+                # If it's just a string, create a fully compliant clause object
+                formatted_clauses.append({
+                    "id": f"clause_{idx}",
+                    "text": clause,
+                    "source_document": "health_insurance_coverage.pdf",  # This should be dynamic based on actual source
+                    "confidence": 0.8,
+                    "relevance_score": 0.8,
+                    "metadata": {
+                        "source": "document",
+                        "page": 1
+                    }
+                })
+            else:
+                # If it's already a dict/object, ensure it has all required fields
+                if not isinstance(clause, dict):
+                    clause = clause.__dict__  # Convert to dict if it's an object
+                # Add any missing required fields
+                clause.update({
+                    "id": clause.get("id", f"clause_{idx}"),
+                    "source_document": clause.get("source_document", "health_insurance_coverage.pdf"),
+                    "confidence": clause.get("confidence", 0.8)
+                })
+                formatted_clauses.append(clause)
+
+        # Format the decision type correctly
+        decision = decision_result.decision.value if isinstance(decision_result.decision, DecisionType) else decision_result.decision
+
         # Prepare response
         response = QueryResponse(
             query=request.query,
-            decision=decision_result.decision,
+            decision=decision,
             confidence_score=decision_result.confidence_score,
             justification=decision_result.justification,
             amount=getattr(decision_result, "approved_amount", None),
-            relevant_clauses=decision_result.relevant_clauses,
+            relevant_clauses=formatted_clauses,
             parsed_entities=parsed_query,
             processing_time=retrieval_results.get('processing_time', 0.0),
             documents_searched=len(retrieval_results['documents']),

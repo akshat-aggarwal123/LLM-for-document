@@ -1,6 +1,6 @@
 """
-Llama Model Integration Service
-Thin wrapper for Meta-Llama-3-8B model
+Insurance Document Analysis Model Service
+Advanced language model wrapper for insurance document processing and analysis
 """
 
 import os
@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 import torch
 from transformers import (
     AutoTokenizer,
-    AutoModelForSeq2SeqLM,  # Changed from AutoModelForCausalLM
+    AutoModelForCausalLM,
     pipeline
 )
 from ..core.config import Settings
@@ -18,7 +18,7 @@ from ..core.exceptions import LlamaModelError
 logger = logging.getLogger(__name__)
 
 class LlamaModelService:
-    """Llama-3-8B model wrapper for advanced reasoning and text generation"""
+    """Language model wrapper for insurance document analysis and response generation"""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -26,45 +26,141 @@ class LlamaModelService:
         self.tokenizer = None
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.max_length = 512
+        self.temperature = 0.7
         self._initialize_model()
 
     def _initialize_model(self):
-        """Initialize the model with optimized settings"""
+        """Initialize the Llama model with optimized settings for insurance document processing"""
         try:
-            # Using FLAN-T5 small as a publicly available alternative
-            model_name = "google/flan-t5-small"
-
-            # Configure basic settings (no quantization needed for small model)
-            logging.info(f"Initializing model: {model_name}")
+            # Using a Llama model - adjust model name as needed
+            model_name = "meta-llama/Llama-2-7b-chat-hf"  # or your specific Llama model
+            
+            logging.info(f"Initializing Llama model: {model_name} on {self.device}")
 
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
                 model_name,
-                cache_dir=self.settings.MODEL_CACHE_DIR
+                cache_dir=self.settings.MODEL_CACHE_DIR,
+                model_max_length=self.max_length
             )
+            
+            # Add padding token if it doesn't exist
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
 
-            # Load model
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(
+            # Load model with optimized settings for Llama
+            self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 device_map="auto",
                 cache_dir=self.settings.MODEL_CACHE_DIR,
-                torch_dtype=torch.float32
+                torch_dtype=torch.float16,  # Use float16 for Llama models
+                load_in_8bit=True  # Enable 8-bit quantization for memory efficiency
             )
 
-            # Create pipeline
+            # Create text generation pipeline
             self.pipeline = pipeline(
-                "text2text-generation",  # FLAN-T5 uses text2text-generation
+                "text-generation",
                 model=self.model,
                 tokenizer=self.tokenizer,
                 max_length=512,
-                temperature=0.7
+                temperature=0.7,
+                pad_token_id=self.tokenizer.eos_token_id
             )
 
             logger.info(f"Llama model initialized successfully on {self.device}")
 
         except Exception as e:
-            logger.error(f"Failed to initialize Llama model: {str(e)}")
-            raise LlamaModelError(f"Model initialization failed: {str(e)}")
+            error_msg = f"Failed to initialize Llama model: {str(e)}"
+            logger.error(error_msg)
+            raise LlamaModelError(error_msg)
+
+    def generate_response(self, query: str, context: List[str], response_type: str = "general") -> str:
+        """Generate a structured response based on the query and context"""
+        try:
+            # Import templates (assuming they exist)
+            try:
+                from .response_templates import INSURANCE_QUERY_TEMPLATE, COVERAGE_EXPLANATION_TEMPLATE
+            except ImportError:
+                # Fallback templates for Llama
+                INSURANCE_QUERY_TEMPLATE = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are an expert insurance analyst. Answer questions based on the provided context.
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+Context: {context}
+
+Question: {query}
+<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+                
+                COVERAGE_EXPLANATION_TEMPLATE = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are an insurance coverage expert. Explain coverage details clearly and accurately.
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+Insurance Context: {context}
+
+Coverage Question: {query}
+<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+            
+            # Combine context into a single string with proper formatting
+            context_text = self._format_context(context)
+            
+            # Select appropriate template based on query type
+            template = COVERAGE_EXPLANATION_TEMPLATE if self._is_coverage_query(query) else INSURANCE_QUERY_TEMPLATE
+                
+            # Create structured prompt
+            prompt = template.format(context=context_text, query=query)
+
+            # Generate response using the model
+            response = self.pipeline(
+                prompt,
+                max_new_tokens=256,
+                num_return_sequences=1,
+                do_sample=True,
+                temperature=0.7,
+                pad_token_id=self.tokenizer.eos_token_id
+            )[0]["generated_text"]
+
+            return self._post_process_response(response, prompt)
+
+        except Exception as e:
+            error_msg = f"Failed to generate response: {str(e)}"
+            logger.error(error_msg)
+            raise LlamaModelError(error_msg)
+
+    def _format_context(self, context: List[str]) -> str:
+        """Format context passages into a structured string"""
+        formatted_passages = []
+        for i, passage in enumerate(context, 1):
+            # Clean up the passage
+            cleaned = passage.strip().replace('\n', ' ').replace('  ', ' ')
+            formatted_passages.append(f"Passage {i}:\n{cleaned}\n")
+        return "\n".join(formatted_passages)
+
+    def _is_coverage_query(self, query: str) -> bool:
+        """Determine if the query is about coverage explanation"""
+        coverage_keywords = [
+            "covered", "coverage", "benefit", "insurance", "plan",
+            "what is", "how does", "explain", "mean"
+        ]
+        query_lower = query.lower()
+        return any(keyword in query_lower for keyword in coverage_keywords)
+
+    def _post_process_response(self, response: str, prompt: str) -> str:
+        """Clean up and format the generated response"""
+        # Remove the original prompt from the response
+        response = response.replace(prompt, "").strip()
+        
+        # Remove Llama-specific tokens
+        response = response.replace("<|eot_id|>", "").strip()
+        response = response.replace("<|end_of_text|>", "").strip()
+        
+        # Ensure proper formatting
+        response = response.replace(" :", ":")
+        response = response.replace(" ?", "?")
+        response = response.replace(" .", ".")
+        
+        # Add line breaks for readability
+        response = response.replace(". ", ".\n")
+        
+        return response.strip()
 
     def generate_decision_reasoning(
         self,
@@ -135,8 +231,7 @@ class LlamaModelService:
         """Analyze document content for key information extraction"""
 
         try:
-            prompt = f"""
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+            prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are an expert insurance document analyzer. Analyze the following {document_type} content and extract key information.
 
 <|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -195,8 +290,7 @@ Provide a structured analysis:
             for clause in relevant_clauses[:3]
         ])
 
-        return f"""
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+        return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are an expert insurance claims analyst. Provide detailed reasoning for insurance claim decisions.
 
 <|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -237,8 +331,7 @@ Please provide detailed reasoning for this decision, considering:
             for i, clause in enumerate(relevant_clauses[:2])
         ])
 
-        return f"""
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+        return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are an insurance claims officer. Write a clear, professional justification for claim decisions.
 
 <|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -265,9 +358,11 @@ Write a professional justification (100-150 words) explaining this decision:
             # Remove the prompt from the generated text
             reasoning = generated_text.replace(prompt, "").strip()
 
-            # Clean up the response
+            # Clean up Llama-specific tokens
             if "<|eot_id|>" in reasoning:
                 reasoning = reasoning.split("<|eot_id|>")[0]
+            
+            reasoning = reasoning.replace("<|end_of_text|>", "").strip()
 
             return reasoning[:1000]  # Limit length
 
@@ -280,11 +375,11 @@ Write a professional justification (100-150 words) explaining this decision:
         try:
             justification = generated_text.replace(prompt, "").strip()
 
+            # Clean up Llama-specific tokens
             if "<|eot_id|>" in justification:
                 justification = justification.split("<|eot_id|>")[0]
 
-            # Clean up common artifacts
-            justification = justification.replace("Assistant:", "").strip()
+            justification = justification.replace("<|end_of_text|>", "").strip()
             justification = justification.replace("**", "").strip()
 
             return justification[:500]  # Limit length
@@ -298,8 +393,11 @@ Write a professional justification (100-150 words) explaining this decision:
         try:
             analysis = generated_text.replace(prompt, "").strip()
 
+            # Clean up Llama-specific tokens
             if "<|eot_id|>" in analysis:
                 analysis = analysis.split("<|eot_id|>")[0]
+
+            analysis = analysis.replace("<|end_of_text|>", "").strip()
 
             return analysis[:800]
 

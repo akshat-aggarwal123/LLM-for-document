@@ -203,10 +203,9 @@ async def upload_document(file: UploadFile = File(...)):
         print("[DEBUG] DocumentProcessor is available, calling process_document...")
         
         # Process document - this now calls your fixed DocumentProcessor
-        processed_data = document_processor.process_document(file_path)
-
-        # ...after processing...
+        print("[DEBUG] DocumentProcessor is available, calling process_document...")
         clauses = document_processor.process_document(file_path)
+
         processed_data = {
             'document_type': 'unknown',  # or infer from clauses
             'sections': clauses,

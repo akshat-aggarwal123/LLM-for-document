@@ -57,11 +57,30 @@ class SemanticRetriever:
                     else:
                         processed_metadata['document_type'] = 'unknown'
             
-            # Store the document
+            # Split content into chunks for better retrieval
+            if isinstance(content, str):
+                chunks = [content]
+            elif isinstance(content, list):
+                chunks = content
+            else:
+                chunks = [str(content)]
+
+            # Create unique IDs for each chunk
+            chunk_ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
+            
+            # Replicate metadata for each chunk
+            chunk_metadatas = [processed_metadata for _ in chunks]
+            
+            # Add chunk index to metadata
+            for i, meta in enumerate(chunk_metadatas):
+                meta['chunk_index'] = i
+                meta['total_chunks'] = len(chunks)
+            
+            # Store the document chunks
             self.collection.add(
-                documents=[content],
-                metadatas=[processed_metadata],
-                ids=[doc_id]
+                documents=chunks,
+                metadatas=chunk_metadatas,
+                ids=chunk_ids
             )
             
             logger.info(f"Successfully stored document with ID: {doc_id}")
@@ -128,10 +147,14 @@ class SemanticRetriever:
             return False
 
     def search(self, query: str, top_k: int = 10, filters: Optional[Dict] = None) -> List[Dict[str, Any]]:
-        """Performs semantic search for a given query."""
+        """Performs semantic search with improved query handling."""
         try:
+            # Enhance the query with relevant insurance terms
+            enhanced_query = self._enhance_query(query)
+            print(f"[DEBUG] Enhanced query: {enhanced_query}")
+
             results = self.collection.query(
-                query_texts=[query],
+                query_texts=[enhanced_query],
                 n_results=top_k,
                 where=filters,
                 include=["documents", "metadatas", "distances"]
@@ -146,10 +169,15 @@ class SemanticRetriever:
                 results['metadatas'][0],
                 results['distances'][0]
             )):
+                # Improve relevance scoring
+                similarity = max(0, 1 - distance)
+                relevance_boost = self._calculate_relevance_boost(doc, query)
+                final_score = min(1.0, similarity + relevance_boost)
+                
                 formatted_results.append({
                     'content': doc,
                     'metadata': metadata,
-                    'similarity_score': max(0, 1 - distance), # Cosine distance to similarity
+                    'similarity_score': final_score,
                     'rank': i + 1
                 })
 
@@ -159,6 +187,85 @@ class SemanticRetriever:
         except Exception as e:
             logger.error(f"Error during semantic search: {e}", exc_info=True)
             return []
+
+    def _enhance_query(self, query: str) -> str:
+        """Enhance the query with relevant insurance terms."""
+        query = query.lower()
+        
+        # Map common terms to insurance-specific vocabulary
+        term_mappings = {
+            'cover': ['coverage', 'covered', 'benefit', 'insurance', 'included'],
+            'pay': ['payment', 'copay', 'deductible', 'cost', 'expense'],
+            'limit': ['maximum', 'up to', 'cap', 'threshold', 'restriction'],
+            'exclude': ['exclusion', 'not covered', 'limitation', 'restricted', 'prohibited'],
+            'doctor': ['physician', 'provider', 'medical professional', 'practitioner'],
+            'hospital': ['medical facility', 'healthcare center', 'clinic', 'institution'],
+            'money': ['cost', 'expense', 'amount', 'fee', 'charge'],
+            'surgery': ['procedure', 'operation', 'treatment', 'intervention'],
+            'pre-existing': ['pre existing', 'preexisting', 'prior condition', 'existing condition', 'prior diagnosis'],
+            'condition': ['illness', 'disease', 'ailment', 'medical condition', 'health issue']
+        }
+        
+        enhanced_terms = []
+        for term, mappings in term_mappings.items():
+            if term in query:
+                enhanced_terms.extend(mappings)
+        
+        if enhanced_terms:
+            enhanced_query = f"{query} {' '.join(enhanced_terms)}"
+            return enhanced_query
+        return query
+
+    def _calculate_relevance_boost(self, content: str, query: str) -> float:
+        """Calculate relevance boost based on content analysis."""
+        boost = 0.0
+        
+        # Convert to lowercase for case-insensitive matching
+        content_lower = content.lower()
+        query_lower = query.lower()
+        
+        # Boost for section headers
+        if any(header in content_lower for header in ['section', 'coverage', 'exclusion', 'limitation']):
+            boost += 0.1
+            
+        # Boost for exact phrase matches
+        if query_lower in content_lower:
+            boost += 0.2
+            
+        # Special boost for pre-existing conditions related content
+        preexisting_terms = ['pre-existing', 'preexisting', 'prior condition', 'existing condition']
+        if any(term in query_lower for term in preexisting_terms):
+            if any(term in content_lower for term in preexisting_terms):
+                boost += 0.3
+                
+        # Boost for negation terms in exclusion queries
+        if 'exclude' in query_lower or 'not' in query_lower:
+            negation_terms = ['not', 'exclude', 'except', 'unless', 'without']
+            if any(term in content_lower for term in negation_terms):
+                boost += 0.15
+        content = content.lower()
+        query_terms = query.lower().split()
+        
+        # Boost for exact phrase matches
+        if query.lower() in content:
+            boost += 0.3
+        
+        # Boost for insurance-specific terms
+        insurance_terms = ['coverage', 'benefit', 'policy', 'claim', 'copay', 'deductible']
+        term_matches = sum(1 for term in insurance_terms if term in content)
+        boost += min(0.2, term_matches * 0.05)
+        
+        # Boost for query term proximity
+        term_positions = []
+        for term in query_terms:
+            if term in content:
+                term_positions.append(content.index(term))
+        if term_positions:
+            max_distance = max(term_positions) - min(term_positions)
+            proximity_boost = 0.2 * (1.0 / (1.0 + max_distance/100))
+            boost += proximity_boost
+        
+        return min(0.5, boost)  # Cap the total boost at 0.5
 
     def get_collection_stats(self) -> Dict[str, Any]:
         """Gets statistics about the document collection."""
